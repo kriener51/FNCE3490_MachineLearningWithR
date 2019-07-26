@@ -4,3 +4,4 @@ Santa Clara University
 
 Final Project - Sentiment analysis with Seattle Airbnb data<br />
 Contributors: Andrew Early, Constance McCarney, Sowmya Murali, Kyle Riener, Jessica Whalen
+Data sourced from Kaggle
