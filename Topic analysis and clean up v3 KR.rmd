@@ -1,0 +1,263 @@
+---
+title: "Final Project"
+author: "Kyle Riener"
+date: "May 30, 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## Read in the data
+```{r}
+library(data.table)
+library(textcat)
+
+review_data = fread("reviews.csv")
+```
+
+
+## Get sentiment
+```{r}
+library(NLP)
+library(syuzhet)
+library(ggplot2)
+library(viridis)
+
+# Create variable for sentiment score of each review
+review_data$sentiment=get_sentiment(review_data$comments)
+#print(review_data$sentiment)
+hist(review_data$sentiment)
+summary(review_data$sentiment)
+
+list_data=fread("listings.csv")
+df=merge(list_data,review_data, by.x='id',by.y= 'listing_id')
+df$nsentiment = scale(df$sentiment)
+write.csv(df, file="list_and_review.csv")
+
+```
+
+
+## Subset into good and bad
+```{r}
+good = subset(review_data, sentiment >= 10)
+bad = subset(review_data, sentiment < 0)
+
+#Remove reviews in a foreign language
+good$lang = textcat(good$comments)
+good = subset(good, lang == "english")
+bad$lang = textcat(bad$comments)
+bad = subset(bad, lang == "english")
+```
+
+## Topic analysis
+```{r}
+library(topicmodels)
+library(tm)
+library(tidytext)
+library(magrittr)
+library(wordcloud)
+library(text2vec)
+
+# Create document-term matrix for good reviews
+ctext = Corpus(VectorSource(good$comments))
+ctext = tm_map(ctext,tolower)
+ctext = tm_map(ctext,removeWords,stopwords("english"))
+ctext = tm_map(ctext,removeWords,c("seattle", "us", "we", "i"))
+ctext = tm_map(ctext,removePunctuation)
+tdm_good = TermDocumentMatrix(ctext)
+dtm_good = tidy(tdm_good) %>% cast_dtm(document, term, count)
+
+#parameters 
+burnin = 4000
+iter = 2000
+thin = 500
+seed = list(2003,5,63,100001,765)
+nstart = 5
+best = TRUE
+k = 7 #Number of topics
+
+
+#LDA for good reviews
+#res <-LDA(dtm_good, k, method="Gibbs", control = list(nstart = nstart, seed = seed, best = best, burnin = burnin, iter = iter, thin = thin))
+#save(res,file="resgood.Rda")
+load("resgood.Rda")
+
+# print topics
+res.terms = as.matrix(terms(res,10))
+print(res.terms)
+
+#wordclouds
+#bigrams
+prep_fun = tolower
+tok_fun = word_tokenizer
+
+it_train = itoken(ctext$content, 
+             preprocessor = prep_fun, 
+             tokenizer = tok_fun, 
+             progressbar = FALSE)
+vocab = create_vocabulary(it_train, ngram = c(2, 2))
+wordcloud(vocab$term,vocab$term_count,max.word=50, random.order = FALSE)
+
+#single words
+tdm_mat= as.matrix(tdm_good)
+wordcount= sort(rowSums(tdm_mat), decreasing=TRUE)
+tdm_names= names(wordcount) # Getting a lot of the structure of this from Class Notes
+wordcloud(tdm_names,wordcount,max.word=50, random.order = FALSE)
+
+#Create document-term matrix for bad reviews 
+ctext = Corpus(VectorSource(bad$comments))
+ctext = tm_map(ctext,tolower)
+ctext = tm_map(ctext,removeWords,stopwords("english"))
+ctext = tm_map(ctext,removeWords,c("seattle", "us", "we", "i"))
+ctext = tm_map(ctext,removePunctuation)
+tdm_bad = TermDocumentMatrix(ctext)
+dtm_bad = tidy(tdm_bad) %>% cast_dtm(document, term, count)
+
+#LDA for bad reviews
+#res <-LDA(dtm_bad, k, method="Gibbs", control = list(nstart = nstart, seed = seed, best = best, burnin = burnin, iter = iter, thin = thin))
+#save(resbad,file="resbad.Rda")
+load("resbad.Rda")
+
+# print topics
+res.terms = as.matrix(terms(res,10))
+print(res.terms)
+#wordclouds
+#bigrams
+it_train = itoken(ctext$content, 
+             preprocessor = prep_fun, 
+             tokenizer = tok_fun, 
+             progressbar = FALSE)
+vocab = create_vocabulary(it_train, ngram = c(2, 2))
+wordcloud(vocab$term,vocab$term_count,max.word=50, random.order = FALSE)
+
+#single words
+tdm_mat= as.matrix(tdm_bad)
+wordcount= sort(rowSums(tdm_mat), decreasing=TRUE)
+tdm_names= names(wordcount) # Getting a lot of the structure of this from Class Notes
+wordcloud(tdm_names,wordcount,max.word=100, random.order = FALSE)
+```
+Interesting note: initial analysis had many foreign words in the bad topics. Perhaps cultural differences led to some disappointment.
+
+## Case study for listing #1974131 - not used, passed off to Constance
+```{r}
+#1974131
+case1=review_data[which(review_data$listing_id == 1974131),]
+case1$date = as.Date(case1$date,"%y-%m-%d")
+ggplot(case1, aes(date, sentiment)) + geom_smooth()
+good = subset(case1, sentiment >= 10)
+bad = subset(case1, sentiment < 4.6)
+
+# Create document-term matrix for good reviews
+ctext = Corpus(VectorSource(good$comments))
+ctext = tm_map(ctext,tolower)
+ctext = tm_map(ctext,removeWords,stopwords("english"))
+ctext = tm_map(ctext,removePunctuation)
+tdm_good = TermDocumentMatrix(ctext)
+dtm_good = tidy(tdm_good) %>% cast_dtm(document, term, count)
+
+#parameters 
+burnin = 4000
+iter = 2000
+thin = 500
+seed = list(2003,5,63,100001,765)
+nstart = 5
+best = TRUE
+k = 5 #Number of topics
+
+
+#LDA for good reviews
+resgood <-LDA(dtm_good, k, method="Gibbs", control = list(nstart = nstart, seed = seed, best = best, burnin = burnin, iter = iter, thin = thin))
+
+
+# print topics
+resgood.terms = as.matrix(terms(resgood,10))
+print(resgood.terms)
+
+#bad reviews
+ctext = Corpus(VectorSource(bad$comments))
+ctext = tm_map(ctext,tolower)
+ctext = tm_map(ctext,removeWords,stopwords("english"))
+ctext = tm_map(ctext,removePunctuation)
+tdm_bad = TermDocumentMatrix(ctext)
+dtm_bad = tidy(tdm_bad) %>% cast_dtm(document, term, count)
+
+#LDA for bad reviews
+resbad <-LDA(dtm_bad, k, method="Gibbs", control = list(nstart = nstart, seed = seed, best = best, burnin = burnin, iter = iter, thin = thin))
+
+# print topics
+resbad.terms = as.matrix(terms(resbad,10))
+print(resbad.terms)
+```
+
+
+
+
+
+
+## Clean up for other possible analysis - not used
+```{r}
+list_data=fread("listings.csv")
+
+#Convert needed prices variable to numeric
+list_data$price=gsub('[,]','',list_data$price)
+list_data$price=as.numeric(gsub('[$]','',list_data$price))
+list_data$extra_people=gsub('[,]','',list_data$extra_people)
+list_data$extra_people=as.numeric(gsub('[$]','',list_data$extra_people))
+list_data$security_deposit=gsub('[,]','',list_data$security_deposit)
+list_data$security_deposit=as.numeric(gsub('[$]','',list_data$security_deposit))
+list_data$cleaning_fee=gsub('[,]','',list_data$cleaning_fee)
+list_data$cleaning_fee=as.numeric(gsub('[$]','',list_data$cleaning_fee))
+
+#Converty host verifications to a list
+list_data$host_verifications=gsub("[']",'',list_data$host_verifications)
+list_data$host_verifications=gsub("[[]",'',list_data$host_verifications)
+list_data$host_verifications=gsub("[]]",'',list_data$host_verifications)
+list_data$host_verifications <- lapply(strsplit(as.character(list_data$host_verifications),split=','),trimws)
+
+#Convert amenities variable to a list
+list_data$amenities=gsub('["]','',list_data$amenities)
+list_data$amenities=gsub('[{]','',list_data$amenities)
+list_data$amenities=gsub('[}]','',list_data$amenities)
+list_data$amenities <- lapply(strsplit(as.character(list_data$amenities),split=','),trimws)
+
+```
+
+```{r}
+y=list_data[,"price"]
+x=list_data[,c("host_is_superhost", "host_has_profile_pic", "host_verifications", "host_identity_verified", "neighbourhood", "property_type", "room_type", "accommodates", "bathrooms", "bedrooms", "beds", "bed_type", "amenities", "security_deposit", "cleaning_fee", "guests_included", "extra_people", "minimum_nights", "maximum_nights", "review_scores_location", "cancellation_policy")]
+
+#Turn list variables into dummy variables
+totalam=c()
+totalverif=c()
+for(a in 1:nrow(list_data))
+{  for(i in list_data$amenities[[a]])
+  {  
+  totalam=c(totalam,i)
+  }
+  
+}
+totalam=unique(totalam) # all the possible amenities
+
+for(a in 1:nrow(list_data))
+{  for(i in list_data$host_verifications[[a]])
+  {  
+  totalverif=c(totalverif,i)
+  }
+  
+}
+totalverif=unique(totalverif) # all the possible verifactions
+
+#Make dummy variables for each amenity
+for(t in totalam) {
+   x[,paste("amen_",t,sep="")] <- 0
+   x[,paste("amen_",t,sep="")] <- apply(x, 1, FUN = function(x) if(t %in% x$amenities) 1 else 0)
+  }
+x$amenities = NULL
+
+#Make dummy variables for each verification
+for(t in totalverif) {
+   x[,paste("ver_",t,sep="")] <- 0
+   x[,paste("ver_",t,sep="")] <- apply(x, 1, FUN = function(x) if(t %in% x$host_verifications) 1 else 0)
+  }
+x$host_verifications = NULL
+```
